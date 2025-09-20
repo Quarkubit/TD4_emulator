@@ -8,23 +8,32 @@
 
 #define MEMORY_SIZE 16
 
-// РЎС‚СЂСѓРєС‚СѓСЂР° РґР»СЏ СЌРјСѓР»СЏС‚РѕСЂР° TD4
+// Структура для эмулятора TD4
 typedef struct {
     uint8_t memory[MEMORY_SIZE];
-    uint8_t A, B; // Р РµРіРёСЃС‚СЂС‹
-    uint8_t C; // Р¤Р»Р°Рі РїРµСЂРµРЅРѕСЃР°
-    uint8_t PC; // Р’С‹РїРѕР»РЅСЏРµРјР°СЏ СЃС‚СЂРѕРєР°
-    uint8_t IN_line, OUT_line; // Р›РёРЅРёРё РІС…РѕРґР° Рё РІС‹С…РѕРґР°
+    uint8_t A, B; // Регистры
+    uint8_t C; // Флаг переноса
+    uint8_t PC; // Выполняемая строка
+    uint8_t IN_line, OUT_line; // Линии входа и выхода
 } TD4Emulator;
 
-// РЎС‚СЂСѓРєС‚СѓСЂР° РґР»СЏ С…СЂР°РЅРµРЅРёСЏ РёРЅС„РѕСЂРјР°С†РёРё Рѕ РєРѕРјР°РЅРґРµ
+// Структура для хранения информации о команде
 typedef struct {
     const char* name;
     uint8_t opcode;
     int has_immediate;
 } CommandInfo;
 
-// РўР°Р±Р»РёС†Р° РєРѕРјР°РЅРґ TD4
+
+// Преобразует 4-битное значение в строку вида "1011"
+void to_binary_str(uint8_t value, char* buffer) {
+    for (int i = 3; i >= 0; i--) {
+        buffer[3 - i] = ((value >> i) & 1) ? '1' : '0';
+    }
+    buffer[4] = '\0';
+}
+
+// Таблица команд TD4
 CommandInfo commands[] = {
     {"ADD A", 0x00, 1},
     {"MOV A, B", 0x10, 0},
@@ -42,20 +51,20 @@ CommandInfo commands[] = {
 
 #define NUM_COMMANDS (sizeof(commands) / sizeof(commands[0]))
 
-// Р¤СѓРЅРєС†РёСЏ РґР»СЏ Р·Р°РіСЂСѓР·РєРё РїСЂРѕРіСЂР°РјРјС‹ РёР· С„Р°Р№Р»Р°
+// Функция для загрузки программы из файла
 int load_program(TD4Emulator* emu, const char* filename) {
     FILE* file;
     errno_t err = fopen_s(&file, filename, "rb");
     if (err != 0 || file == NULL) {
-        printf("РћС€РёР±РєР° РѕС‚РєСЂС‹С‚РёСЏ С„Р°Р№Р»Р°: %s\n", filename);
+        printf("Ошибка открытия файла: %s\n", filename);
         return 0;
     }
 
-    // Р§РёС‚Р°РµРј РїСЂРѕРіСЂР°РјРјСѓ РІ РїР°РјСЏС‚СЊ
+    // Читаем программу в память
     fread(emu->memory, 1, MEMORY_SIZE, file);
 
     if (ferror(file)) {
-        printf("РћС€РёР±РєР° С‡С‚РµРЅРёСЏ С„Р°Р№Р»Р°\n");
+        printf("Ошибка чтения файла\n");
         fclose(file);
         return 0;
     }
@@ -64,7 +73,7 @@ int load_program(TD4Emulator* emu, const char* filename) {
     return 1;
 }
 
-// Р¤СѓРЅРєС†РёСЏ РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ РјРЅРµРјРѕРЅРёРєРё РєРѕРјР°РЅРґС‹
+// Функция для получения мнемоники команды
 void get_mnemonic(uint8_t instruction, char* buffer) {
     uint8_t opcode = instruction & 0xF0;
     uint8_t im = instruction & 0x0F;
@@ -72,7 +81,9 @@ void get_mnemonic(uint8_t instruction, char* buffer) {
     for (int i = 0; i < NUM_COMMANDS; i++) {
         if (commands[i].opcode == opcode) {
             if (commands[i].has_immediate) {
-                sprintf_s(buffer, 50, "%s %d", commands[i].name, im);
+                char bin_im[5];
+                to_binary_str(im, bin_im);
+                sprintf_s(buffer, 50, "%s %s", commands[i].name, bin_im);
             }
             else {
                 strcpy_s(buffer, 50, commands[i].name);
@@ -81,11 +92,11 @@ void get_mnemonic(uint8_t instruction, char* buffer) {
         }
     }
 
-    // Р•СЃР»Рё РєРѕРјР°РЅРґР° РЅРµ РЅР°Р№РґРµРЅР°
+    // Если команда не найдена
     sprintf_s(buffer, 50, "UNKNOWN %02X", instruction);
 }
 
-// Р¤СѓРЅРєС†РёСЏ РІС‹РїРѕР»РЅРµРЅРёСЏ РёРЅСЃС‚СЂСѓРєС†РёРё
+// Функция выполнения инструкции
 void execute_instruction(TD4Emulator* emu) {
     uint8_t instruction = emu->memory[emu->PC];
     uint8_t opcode = instruction & 0xF0;
@@ -194,48 +205,60 @@ void execute_instruction(TD4Emulator* emu) {
 
         default:
         {
-            printf("РќРµРёР·РІРµСЃС‚РЅР°СЏ РєРѕРјР°РЅРґР°: %02X\n\'", instruction, "\'");
+            printf("Неизвестная команда: %02X\n\'", instruction, "\'");
             emu->PC = (emu->PC + 1) & 0x0F;
             break;
         }
     }
 }
 
-// Р¤СѓРЅРєС†РёСЏ РґР»СЏ РІС‹РІРѕРґР° СЃРѕСЃС‚РѕСЏРЅРёСЏ РїСЂРѕС†РµСЃСЃРѕСЂР°
+// Функция для вывода состояния процессора в двоичном виде
 void print_state(TD4Emulator* emu, int cycle) {
     uint8_t instruction = emu->memory[emu->PC];
     char mnemonic[50];
     get_mnemonic(instruction, mnemonic);
 
-    printf("РўР°РєС‚: %2d | PC: %X | РљРѕРјР°РЅРґР°: %02X (%s) | A: %X | B: %X | OUT: %X | IN: %X | C: %d\n",
-        cycle, emu->PC, instruction, mnemonic, emu->A, emu->B, emu->OUT_line, emu->IN_line, emu->C);
+    char bin_PC[5], bin_A[5], bin_B[5], bin_OUT[5], bin_IN[5], bin_C[2];
+    to_binary_str(emu->PC & 0x0F, bin_PC);
+    to_binary_str(emu->A & 0x0F, bin_A);
+    to_binary_str(emu->B & 0x0F, bin_B);
+    to_binary_str(emu->OUT_line & 0x0F, bin_OUT);
+    to_binary_str(emu->IN_line & 0x0F, bin_IN);
+    sprintf_s(bin_C, sizeof(bin_C), "%d", emu->C);
+
+    printf("Такт: %2d | PC: %s | Команда: %02X (%s) | A: %s | B: %s | OUT: %s | IN: %s | C: %s\n",
+        cycle, bin_PC, instruction, mnemonic, bin_A, bin_B, bin_OUT, bin_IN, bin_C);
 }
 
-// Р¤СѓРЅРєС†РёСЏ РґР»СЏ РѕС‚РѕР±СЂР°Р¶РµРЅРёСЏ СЃРѕРґРµСЂР¶РёРјРѕРіРѕ РїР°РјСЏС‚Рё
+// Функция для отображения содержимого памяти в двоичном виде
 void print_memory(TD4Emulator* emu) {
-    printf("\РЎРѕРґРµСЂР¶РёРјРѕРµ РїР°РјСЏС‚Рё:\n");
+    printf("\nСодержимое памяти (в двоичном виде):\n");
     for (int i = 0; i < MEMORY_SIZE; i++) {
-        if (i % 8 == 0) printf("\n%02X: ", i);
-        printf("%02X ", emu->memory[i]);
+        if (i % 8 == 0) {
+            printf("\n%02X: ", i);
+        }
+        char bin_val[5];
+        to_binary_str(emu->memory[i] & 0x0F, bin_val);
+        printf("%s ", bin_val);
     }
     printf("\n");
 }
 
-// Р¤СѓРЅРєС†РёСЏ РґР»СЏ РѕС‚РѕР±СЂР°Р¶РµРЅРёСЏ СЃРїСЂР°РІРєРё
+// Функция для отображения справки
 void print_help() {
-    printf("\РЈРїСЂР°РІР»РµРЅРёРµ СЌРјСѓР»СЏС‚РѕСЂРѕРј:\n");
-    printf("  Enter - РІС‹РїРѕР»РЅРёС‚СЊ СЃР»РµРґСѓСЋС‰СѓСЋ РєРѕРјР°РЅРґСѓ (РІ СЂСѓС‡РЅРѕРј СЂРµР¶РёРјРµ)\n");
-    printf("  'a'   - РїРµСЂРµРєР»СЋС‡РёС‚СЊСЃСЏ РІ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРёР№ СЂРµР¶РёРј\n");
-    printf("  'm'   - РїРµСЂРµРєР»СЋС‡РёС‚СЊСЃСЏ РІ СЂСѓС‡РЅРѕР№ СЂРµР¶РёРј\n");
-    printf("  's'   - РїРѕРєР°Р·Р°С‚СЊ СЃРѕРґРµСЂР¶РёРјРѕРµ РїР°РјСЏС‚Рё\n");
-    printf("  'i'   - РёР·РјРµРЅРёС‚СЊ Р·РЅР°С‡РµРЅРёРµ РІС…РѕРґРЅРѕРіРѕ РїРѕСЂС‚Р°\n");
-    printf("  'r'   - СЃР±СЂРѕСЃРёС‚СЊ РїСЂРѕС†РµСЃСЃРѕСЂ\n");
-    printf("  'h'   - РїРѕРєР°Р·Р°С‚СЊ СЃРїСЂР°РІРєСѓ\n");
-    printf("  'q'   - РІС‹Р№С‚Рё РёР· СЌРјСѓР»СЏС‚РѕСЂР°\n");
+    printf("\nУправление эмулятором:\n");
+    printf("  Enter - выполнить следующую команду (в ручном режиме)\n");
+    printf("  'a'   - переключиться в автоматический режим\n");
+    printf("  'm'   - переключиться в ручной режим\n");
+    printf("  's'   - показать содержимое памяти\n");
+    printf("  'i'   - изменить значение входного порта\n");
+    printf("  'r'   - сбросить процессор\n");
+    printf("  'h'   - показать справку\n");
+    printf("  'q'   - выйти из эмулятора\n");
 }
 
 int main() {
-    // РЈСЃС‚Р°РЅРѕРІРєР° СЂСѓСЃСЃРєРѕР№ Р»РѕРєР°Р»Рё Рё РєРѕРґРѕРІРѕР№ СЃС‚СЂР°РЅРёС†С‹ РєРѕРЅСЃРѕР»Рё
+    // Установка русской локали и кодовой страницы консоли
     setlocale(LC_ALL, "Russian");
     SetConsoleCP(1251);
     SetConsoleOutputCP(1251);
@@ -244,43 +267,43 @@ int main() {
     memset(&emu, 0, sizeof(emu));
 
     char filename[256];
-    printf("Р’РІРµРґРёС‚Рµ РёРјСЏ С„Р°Р№Р»Р° СЃ РїСЂРѕРіСЂР°РјРјРѕР№: ");
+    printf("Введите имя файла с программой: ");
     scanf_s("%255s", filename, (unsigned)_countof(filename));
 
-    // Р”РѕР±Р°РІР»СЏРµРј СЂР°СЃС€РёСЂРµРЅРёРµ .bin РµСЃР»Рё РµРіРѕ РЅРµС‚
+    // Добавляем расширение .bin если его нет
     if (strstr(filename, ".") == NULL) {
         strcat_s(filename, sizeof(filename), ".bin");
     }
 
-    // Р—Р°РіСЂСѓР·РєР° РїСЂРѕРіСЂР°РјРјС‹
+    // Загрузка программы
     if (!load_program(&emu, filename)) {
-        printf("РќР°Р¶РјРёС‚Рµ Р»СЋР±СѓСЋ РєР»Р°РІРёС€Сѓ РґР»СЏ РІС‹С…РѕРґР°...");
+        printf("Нажмите любую клавишу для выхода...");
         _getch();
         return 1;
     }
 
-    printf("РџСЂРѕРіСЂР°РјРјР° СѓСЃРїРµС€РЅРѕ Р·Р°РіСЂСѓР¶РµРЅР° РёР· С„Р°Р№Р»Р° %s\n", filename);
+    printf("Программа успешно загружена из файла %s\n", filename);
 
     int cycle = 0;
     int auto_mode = 0;
     int delay_ms = 1000;
 
-    printf("Р­РјСѓР»СЏС‚РѕСЂ РїСЂРѕС†РµСЃСЃРѕСЂР° TD4\n");
+    printf("Эмулятор процессора TD4\n");
     print_help();
-    printf("\РќР°Р¶РјРёС‚Рµ Р»СЋР±СѓСЋ РєР»Р°РІРёС€Сѓ РґР»СЏ РЅР°С‡Р°Р»Р°...");
+    printf("\nНажмите любую клавишу для начала...");
     _getch();
 
-    // РћСЃРЅРѕРІРЅРѕР№ С†РёРєР» СЌРјСѓР»СЏС‚РѕСЂР°
+    // Основной цикл эмулятора
     while (1) {
         system("cls");
 
-        printf("Р­РјСѓР»СЏС‚РѕСЂ РїСЂРѕС†РµСЃСЃРѕСЂР° TD4 - %s\n", auto_mode ? "РђР’РўРћРњРђРўРР§Р•РЎРљРР™ Р Р•Р–РРњ" : "Р РЈР§РќРћР™ Р Р•Р–РРњ");
-        printf("Р¤Р°Р№Р»: %s\n", filename);
+        printf("Эмулятор процессора TD4 - %s\n", auto_mode ? "АВТОМАТИЧЕСКИЙ РЕЖИМ" : "РУЧНОЙ РЕЖИМ");
+        printf("Файл: %s\n", filename);
         print_state(&emu, cycle);
 
         if (auto_mode) {
-            printf("\РђРІС‚РѕРјР°С‚РёС‡РµСЃРєРёР№ СЂРµР¶РёРј. Р—Р°РґРµСЂР¶РєР°: %d РјСЃ\n", delay_ms);
-            printf("РќР°Р¶РјРёС‚Рµ 'm' РґР»СЏ РїРµСЂРµС…РѕРґР° РІ СЂСѓС‡РЅРѕР№ СЂРµР¶РёРј РёР»Рё 'q' РґР»СЏ РІС‹С…РѕРґР°\n");
+            printf("\nАвтоматический режим. Задержка: %d мс\n", delay_ms);
+            printf("Нажмите 'm' для перехода в ручной режим или 'q' для выхода\n");
 
             execute_instruction(&emu);
             cycle++;
@@ -288,12 +311,12 @@ int main() {
             Sleep(delay_ms);
         }
         else {
-            printf("\Р СѓС‡РЅРѕР№ СЂРµР¶РёРј. РќР°Р¶РјРёС‚Рµ Enter РґР»СЏ РІС‹РїРѕР»РЅРµРЅРёСЏ РєРѕРјР°РЅРґС‹\n");
-            printf("РР»Рё РІС‹Р±РµСЂРёС‚Рµ РґРµР№СЃС‚РІРёРµ: a-Р°РІС‚Рѕ, s-РїР°РјСЏС‚СЊ, i-РІРІРѕРґ, r-СЃР±СЂРѕСЃ, h-СЃРїСЂР°РІРєР°, q-РІС‹С…РѕРґ\n");
+            printf("\nРучной режим. Нажмите Enter для выполнения команды\n");
+            printf("Или выберите действие: a-авто, s-память, i-ввод, r-сброс, h-справка, q-выход\n");
             while (_kbhit()==NULL){}
         }
 
-        // РћР±СЂР°Р±РѕС‚РєР° РІРІРѕРґР°
+        // Обработка ввода
         if (_kbhit()) {
             int ch = _getch();
 
@@ -308,41 +331,43 @@ int main() {
             case 'a':
             case 'A':
                 auto_mode = 1;
-                printf("\РџРµСЂРµРєР»СЋС‡РµРЅРёРµ РІ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРёР№ СЂРµР¶РёРј\n");
+                printf("\nПереключение в автоматический режим\n");
                 Sleep(1000);
                 break;
 
             case 'm':
             case 'M':
                 auto_mode = 0;
-                printf("\РџРµСЂРµРєР»СЋС‡РµРЅРёРµ РІ СЂСѓС‡РЅРѕР№ СЂРµР¶РёРј\n");
+                printf("\nПереключение в ручной режим\n");
                 Sleep(1000);
                 break;
 
             case 's':
             case 'S':
                 print_memory(&emu);
-                printf("РќР°Р¶РјРёС‚Рµ Р»СЋР±СѓСЋ РєР»Р°РІРёС€Сѓ РґР»СЏ РїСЂРѕРґРѕР»Р¶РµРЅРёСЏ...");
+                printf("Нажмите любую клавишу для продолжения...");
                 _getch();
                 break;
 
             case 'i':
             case 'I':
-                printf("\РўРµРєСѓС‰РµРµ Р·РЅР°С‡РµРЅРёРµ РІС…РѕРґРЅРѕРіРѕ РїРѕСЂС‚Р°: %X\n", emu.IN_line);
-                printf("Р’РІРµРґРёС‚Рµ РЅРѕРІРѕРµ Р·РЅР°С‡РµРЅРёРµ (0-15): ");
+                printf("\nТекущее значение входного порта: %X\n", emu.IN_line);
+                printf("Введите новое значение (0-15): ");
                 {
                     int value;
                     scanf_s("%d", &value);
                     if (value >= 0 && value <= 15) {
                         emu.IN_line = value;
-                        printf("Р—РЅР°С‡РµРЅРёРµ РІС…РѕРґРЅРѕРіРѕ РїРѕСЂС‚Р° РёР·РјРµРЅРµРЅРѕ РЅР°: %X\n", emu.IN_line);
+                        char bin_val[5];
+                        to_binary_str(emu.IN_line, bin_val);
+                        printf("Значение входного порта изменено на: %s (двоичное)\n", bin_val);
                     }
                     else {
-                        printf("РќРµРІРµСЂРЅРѕРµ Р·РЅР°С‡РµРЅРёРµ!\n");
+                        printf("Неверное значение!\n");
                     }
-                    while (getchar() != '\n'); // РћС‡РёСЃС‚РєР° Р±СѓС„РµСЂР° РІРІРѕРґР°
+                    while (getchar() != '\n'); // Очистка буфера ввода
                 }
-                printf("РќР°Р¶РјРёС‚Рµ Р»СЋР±СѓСЋ РєР»Р°РІРёС€Сѓ РґР»СЏ РїСЂРѕРґРѕР»Р¶РµРЅРёСЏ...");
+                printf("Нажмите любую клавишу для продолжения...");
                 _getch();
                 break;
 
@@ -351,26 +376,24 @@ int main() {
                 memset(&emu, 0, sizeof(emu));
                 load_program(&emu, filename);
                 cycle = 0;
-                printf("\РџСЂРѕС†РµСЃСЃРѕСЂ СЃР±СЂРѕС€РµРЅ. РџСЂРѕРіСЂР°РјРјР° СЃРєРѕСЂРѕ Р±СѓРґРµС‚ РїРµСЂРµР·Р°РіСЂСѓР¶РµРЅР°.\n");
+                printf("\nПроцессор сброшен. Программа скоро будет перезагружена.\n");
                 Sleep(2000);
                 break;
 
             case 'h':
             case 'H':
                 print_help();
-                printf("РќР°Р¶РјРёС‚Рµ Р»СЋР±СѓСЋ РєР»Р°РІРёС€Сѓ РґР»СЏ РїСЂРѕРґРѕР»Р¶РµРЅРёСЏ...");
+                printf("Нажмите любую клавишу для продолжения...");
                 _getch();
                 break;
 
             case 'q':
             case 'Q':
-                printf("\Р’С‹С…РѕРґ РёР· СЌРјСѓР»СЏС‚РѕСЂР°\n");
+                printf("\nВыход из эмулятора\n");
                 return 0;
             }
         }
     }
 
     return 0;
-
 }
-
