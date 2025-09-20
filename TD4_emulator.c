@@ -47,7 +47,7 @@ int load_program(TD4Emulator* emu, const char* filename) {
     FILE* file;
     errno_t err = fopen_s(&file, filename, "rb");
     if (err != 0 || file == NULL) {
-        printf("Îøèáêà îòêðûòèÿ ôàéëà: %s\n", filename);
+        printf("Ошибка открытия файла: %s\n", filename);
         return 0;
     }
 
@@ -55,7 +55,7 @@ int load_program(TD4Emulator* emu, const char* filename) {
     fread(emu->memory, 1, MEMORY_SIZE, file);
 
     if (ferror(file)) {
-        printf("Îøèáêà ÷òåíèÿ ôàéëà\n");
+        printf("Ошибка чтения файла\n");
         fclose(file);
         return 0;
     }
@@ -373,3 +373,4 @@ int main() {
     return 0;
 
 }
+
