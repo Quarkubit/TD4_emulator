@@ -5,6 +5,7 @@
 #include <locale.h>
 #include <windows.h>
 #include <conio.h>
+#include <stdbool.h>
 
 #define MEMORY_SIZE 16
 
@@ -28,7 +29,13 @@ typedef struct {
 // Преобразует 4-битное значение в строку вида "1011"
 void to_binary_str(uint8_t value, char* buffer) {
     for (int i = 3; i >= 0; i--) {
-        buffer[3 - i] = ((value >> i) & 1) ? '1' : '0';
+        if ((value >> i) & 1) {
+            buffer[3 - i] = '1';
+        }
+        else {
+            buffer[3 - i] = '0';
+        }
+        //buffer[3 - i] = ((value >> i) & 1) ? '1' : '0';
     }
     buffer[4] = '\0';
 }
@@ -322,7 +329,8 @@ int main() {
 
             switch (ch) {
             case '\r': // Enter
-                if (!auto_mode) {
+                if (!auto_mode) 
+                {
                     execute_instruction(&emu);
                     cycle++;
                 }
@@ -351,25 +359,61 @@ int main() {
 
             case 'i':
             case 'I':
-                printf("\nТекущее значение входного порта: %X\n", emu.IN_line);
-                printf("Введите новое значение (0-15): ");
-                {
-                    int value;
-                    scanf_s("%d", &value);
-                    if (value >= 0 && value <= 15) {
-                        emu.IN_line = value;
-                        char bin_val[5];
-                        to_binary_str(emu.IN_line, bin_val);
-                        printf("Значение входного порта изменено на: %s (двоичное)\n", bin_val);
+            {
+                printf("\nТекущее значение входного порта: %X (двоичное: ", emu.IN_line);
+                char bin_cur[5];
+                to_binary_str(emu.IN_line, bin_cur);
+                printf("%s)\n", bin_cur);
+                printf("Введите новое значение (0-15 или 4-битное двоичное, например 1011): ");
+
+                char input[10];
+                scanf_s("%9s", input, (unsigned)_countof(input));
+                while (getchar() != '\n'); // Очистка буфера
+
+                int value = -1;
+                int len = (int)strlen(input);
+
+                // Попытка интерпретировать как двоичное (ровно 4 символа, только 0/1)
+                if (len == 4) {
+                    bool is_binary = true;
+                    for (int i = 0; i < 4; i++) {
+                        if (input[i] != '0' && input[i] != '1') {
+                            is_binary = false;
+                            break;
+                        }
                     }
-                    else {
-                        printf("Неверное значение!\n");
+                    if (is_binary) {
+                        // Преобразуем двоичную строку в число
+                        value = 0;
+                        for (int i = 0; i < 4; i++) {
+                            value = (value << 1) | (input[i] - '0');
+                        }
                     }
-                    while (getchar() != '\n'); // Очистка буфера ввода
                 }
+
+                // Если не двоичное — пробуем как десятичное
+                if (value == -1) {
+                    char* end;
+                    long dec_val = strtol(input, &end, 10);
+                    if (*end == '\0' && dec_val >= 0 && dec_val <= 15) {
+                        value = (int)dec_val;
+                    }
+                }
+
+                if (value >= 0 && value <= 15) {
+                    emu.IN_line = (uint8_t)value;
+                    char bin_new[5];
+                    to_binary_str(emu.IN_line, bin_new);
+                    printf("Значение входного порта изменено на: %d (двоичное: %s)\n", value, bin_new);
+                }
+                else {
+                    printf("Ошибка: введите число от 0 до 15 или 4-битную двоичную строку (например, 1011)!\n");
+                }
+
                 printf("Нажмите любую клавишу для продолжения...");
                 _getch();
                 break;
+            }
 
             case 'r':
             case 'R':
